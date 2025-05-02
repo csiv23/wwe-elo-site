@@ -3,8 +3,10 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 
-# SQLite DB
+# Local DB / data dumps
 wwe.db
+/data/
+/*.csv
 
 # Virtualenv
 .venv/
@@ -14,3 +16,6 @@ wwe.db
 
 # Editor swap files
 *.swp
+
+# Docker
+docker-compose.override.yml
