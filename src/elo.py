@@ -4,6 +4,7 @@ import pandas as pd
 from typing import Dict, List, Any, Tuple, Optional
 
 from sqlalchemy import select, insert, delete
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from src.db import SessionLocal
 from src.models import matches, elo_history
 

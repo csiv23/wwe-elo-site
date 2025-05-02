@@ -7,7 +7,8 @@ import re
 from datetime import datetime
 from typing import Optional, List, Dict
 
-from sqlalchemy import insert, delete
+from sqlalchemy import select, insert
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from src.db import engine, SessionLocal, metadata
 from src.models import matches
 
@@ -70,7 +71,7 @@ def scrape_matches() -> pd.DataFrame:
 
     for offset in range(0, 300, 100):
         url = f"{BASE_URL}&s={offset}" if offset else BASE_URL
-        print(f"Scraping URL: {url}")
+        print(url)
         resp = requests.get(url)
         if resp.status_code != 200:
             print(f"  → Failed to fetch: {resp.status_code}")
@@ -225,16 +226,70 @@ def classify_match_type(mtype: str) -> Optional[str]:
 
 def refresh_matches(records: List[Dict]) -> None:
     """
-    Truncate the matches table and bulk‐insert the new records.
+    Insert only those records whose (date,show,match_type,winners,losers)
+    combo is not already present.
     """
     session = SessionLocal()
     try:
-        # 1) Delete everything
-        session.execute(delete(matches))
-        session.execute(insert(matches), records)
-        session.commit()
+        # 1) load existing natural keys
+        existing = session.execute(
+            select(
+                matches.c.date,
+                matches.c.show,
+                matches.c.match_type,
+                matches.c.winners,
+                matches.c.losers,
+            )
+        ).all()
+
+        # debug: show how many existing and a few samples
+        print(f"[DEBUG] {len(existing)} existing match keys in DB")
+        for ex in existing[:5]:
+            print("       EX:", ex)
+
+        if not existing:
+            # table is empty → initial load
+            session.execute(insert(matches), records)
+            session.commit()
+            print(f"[INFO] Initial load: inserted {len(records)} matches")
+            return
+
+        seen = set(existing)  # set of 5‑tuples
+        print(f"[DEBUG] First 5 seen keys: {list(seen)[:5]}")
+
+        # 2) filter out any you’ve already got
+        new_recs = []
+        for r in records:
+            key = (
+                r['date'],
+                r['show'],
+                r['match_type'],
+                r['winners'],
+                r['losers']
+            )
+            if key not in seen:
+                new_recs.append(r)
+            else:
+                print("   SKIP:", key)
+
+        # 3) bulk‑insert only the truly new ones
+        if new_recs:
+            print(
+                "[DEBUG] Inserting",
+                len(new_recs),
+                "new keys; sample:",
+                [(r['date'], r['show']) for r in new_recs[:3]]
+            )
+            session.execute(insert(matches), new_recs)
+            session.commit()
+            print(f"[INFO] Inserted {len(new_recs)} new matches")
+        else:
+            print("[INFO] No new matches to insert")
+
     finally:
         session.close()
+
+
 
 if __name__ == "__main__":
     # 1. Scrape into DataFrame
@@ -271,7 +326,6 @@ if __name__ == "__main__":
 
     records = df_db.to_dict(orient="records")
     refresh_matches(records)
-    print(f"[INFO] Replaced matches table with {len(records)} fresh rows.")
     
 
 

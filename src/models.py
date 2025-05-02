@@ -1,6 +1,6 @@
 # src/models.py
 
-from sqlalchemy import Table, Column, Integer, String, Date, Boolean, Float, ForeignKey
+from sqlalchemy import Table, Column, Integer, String, Date, Boolean, Float, ForeignKey, UniqueConstraint
 from src.db import metadata
 
 # matches table: one row per match
@@ -20,6 +20,16 @@ matches = Table(
     Column('multi_man',    Boolean, nullable=False, default=False),
     Column('stipulation',  Boolean, nullable=False, default=False),
     Column('category',    String,    nullable=True),
+    
+    #  enforce uniqueness for upsert conflicts
+    UniqueConstraint(
+        'date',
+        'show',
+        'match_type',
+        'winners',
+        'losers',
+        name='uq_matches__date_show_type_winners_losers'
+    )
 )
 
 # elo_history table: one row per wrestler per match
