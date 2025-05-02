@@ -1,6 +1,3 @@
-Thought for a second
-
-
 ````markdown
 # WWE Elo Tracker
 
