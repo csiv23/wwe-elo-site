@@ -97,7 +97,7 @@ def refresh_elo_history(records: List[Dict[str, Any]]) -> None:
     try:
         # 1) remove all existing rows
         session.execute(delete(elo_history))
-        session.commit()
+
         # 2) insert fresh history
         session.execute(insert(elo_history), records)
         session.commit()

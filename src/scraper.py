@@ -7,14 +7,9 @@ import re
 from datetime import datetime
 from typing import Optional, List, Dict
 
-from sqlalchemy import insert
+from sqlalchemy import insert, delete
 from src.db import engine, SessionLocal, metadata
 from src.models import matches
-
-from sqlalchemy import insert, delete
-from src.db      import SessionLocal
-from src.models  import matches
-
 
 # Ensure tables exist
 metadata.create_all(engine)
@@ -236,9 +231,6 @@ def refresh_matches(records: List[Dict]) -> None:
     try:
         # 1) Delete everything
         session.execute(delete(matches))
-        session.commit()
-
-        # 2) Bulk insert fresh data
         session.execute(insert(matches), records)
         session.commit()
     finally:
@@ -247,7 +239,6 @@ def refresh_matches(records: List[Dict]) -> None:
 if __name__ == "__main__":
     # 1. Scrape into DataFrame
     df = scrape_matches()
-    
     df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
 
 
