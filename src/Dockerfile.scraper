@@ -14,4 +14,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ src/
 
 # 6. Default command
-ENTRYPOINT ["python", "src/scraper.py"]
+ENTRYPOINT ["python", "-m", "src.scraper"]
