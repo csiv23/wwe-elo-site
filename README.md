@@ -1,49 +1,64 @@
-```markdown
+Thought for a second
+
+
+````markdown
 # WWE Elo Tracker
 
-Simple ETL that scrapes WWE matches from Cagematch, computes Elo ratings, and stores both in Postgres. Docker-Compose–ready.
+**ETL pipeline** that scrapes WWE match results, computes Elo ratings, and stores data in Postgres. Docker-Compose–ready.
+
+---
 
 ## 🚀 Features
-- **scraper**: fetches “Quick Results” → normalizes → loads into `matches`  
-- **elo**: reads `matches` → computes per-wrestler Elo → loads into `elo_history`  
+
+- **scraper**: fetches “Quick Results” → normalizes → writes to `matches` table  
+- **elo**: reads `matches` → computes per-wrestler Elo → writes to `elo_history` table  
 - **Postgres** backend (via Docker Compose)
 
+---
+
 ## 🏃 Quickstart
-1. **Clone** & add a `.env`:
-```
 
-DATABASE\_URL=postgresql://user\:pass\@db:5432/wwe
+1. **Clone** this repo and create a `.env` in the project root:
 
-````
-2. **Launch**:
-```bash
-docker-compose up --build -d db
-docker-compose run --rm scraper
-docker-compose run --rm elo
+   ```env
+   DATABASE_URL=postgresql://user:pass@db:5432/wwe
 ````
 
-3. **Inspect** with any SQL client on `localhost:5432`.
+2. **Launch services**:
 
-## 📂 Layout
+   ```bash
+   docker-compose up --build -d db
+   docker-compose run --rm scraper
+   docker-compose run --rm elo
+   ```
+
+3. **Verify** data with any SQL client at `localhost:5432`.
+
+---
+
+## 📂 Project Layout
 
 ```
-docker-compose.yml
-requirements.txt
-src/
-  ├─ Dockerfile.scraper
-  ├─ Dockerfile.elo
-  ├─ db.py
-  ├─ models.py
-  ├─ scraper.py
-  └─ elo.py
+.
+├─ docker-compose.yml
+├─ requirements.txt
+└─ src/
+   ├─ Dockerfile.scraper
+   ├─ Dockerfile.elo
+   ├─ db.py
+   ├─ models.py
+   ├─ scraper.py
+   └─ elo.py
 ```
 
-## 🔜 Next
+---
 
-* Add migrations (Alembic)
-* Handle DB readiness & retries
-* Build API (FastAPI/Flask)
-* CI/CD for tests & linting
+## 🔜 Next Steps
+
+* Add DB migrations (Alembic)
+* Implement service-readiness & retry logic
+* Expose a REST API (FastAPI or Flask)
+* Set up CI/CD (tests, linting)
 
 ```
 ```
