@@ -1,23 +1,17 @@
-# src/db.py
+import os
 from sqlalchemy import create_engine, MetaData
 from sqlalchemy.orm import sessionmaker
 
-# where your on-disk DB will live
-DATABASE_URL = "sqlite:///./wwe.db"
+# pick up DATABASE_URL like: postgresql://user:pass@db:5432/wwe
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "sqlite:///./wwe.db"         # fallback for quick local runs
+)
 
-# 1) the engine
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False},  # sqlite-specific
-    echo=False
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
+    echo=False,
 )
-
-# 2) a session factory
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine,
-)
-
-# 3) global metadata for your Table™ objects
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 metadata = MetaData()
