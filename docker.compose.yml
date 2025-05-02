@@ -1,0 +1,32 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: wwe
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  scraper:
+    build:
+      context: .
+      dockerfile: src/Dockerfile.scraper
+    volumes:
+      - ./data:/data
+    depends_on:
+      - db
+    # later: write into Postgres instead of CSV
+
+  elo:
+    build:
+      context: .
+      dockerfile: src/Dockerfile.elo
+    volumes:
+      - ./data:/data
+    depends_on:
+      - db
+
+volumes:
+  db_data:

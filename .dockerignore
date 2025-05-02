@@ -1,0 +1,6 @@
+__pycache__
+*.pyc
+.venv
+.git
+matches.csv
+elo_history.csv

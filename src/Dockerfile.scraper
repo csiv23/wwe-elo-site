@@ -1,0 +1,17 @@
+# 1. Base image
+FROM python:3.9-slim
+
+# 2. Set a working dir
+WORKDIR /app
+
+# 3. Copy only requirements first (for caching)
+COPY requirements.txt .
+
+# 4. Install deps
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 5. Copy your scraper code
+COPY src/ src/
+
+# 6. Default command
+ENTRYPOINT ["python", "src/scraper.py"]

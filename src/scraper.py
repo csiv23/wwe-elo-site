@@ -7,21 +7,27 @@ import re
 from datetime import datetime
 from typing import Optional, List, Dict
 
+from sqlalchemy import insert
+from src.db import engine, SessionLocal, metadata
+from src.models import matches
+
+from sqlalchemy import insert, delete
+from src.db      import SessionLocal
+from src.models  import matches
+
+
+# Ensure tables exist
+metadata.create_all(engine)
+
 BASE_URL = "https://www.cagematch.net/?id=8&nr=1&page=8"
 
 
 def extract_match_time(text: str) -> Optional[str]:
-    """
-    Extract MM:SS from within parentheses, ignoring TITLE CHANGE markers.
-    """
     m = re.search(r'\((\d{1,2}:\d{2})\)(?:\s+-\s+TITLE CHANGE !!!)?', text)
     return m.group(1) if m else None
 
 
 def determine_finish(text: str) -> str:
-    """
-    Infer finish type from the text.
-    """
     low = text.lower()
     if "referee's decision" in low:
         return "Referee's Decision"
@@ -39,47 +45,32 @@ def determine_finish(text: str) -> str:
 
 
 def detect_title_change(text: str) -> bool:
-    """
-    Return True if the text contains 'TITLE CHANGE !!!'.
-    """
     return 'TITLE CHANGE !!!' in text
 
 
 def replace_and_symbols(name: str) -> str:
-    """
-    Normalize team delimiters: replace ' & ' and ' and ' with ', '.
-    """
     name = name.replace(" & ", ", ")
     name = name.replace(" and ", ", ")
     return name.strip(", ")
 
 
-def parse_header(header_text: str) -> Dict[str, str]:
-    """
-    From the QuickResultsHeader text, extract the date (ISO format).
-    """
+def parse_header(header_text: str) -> Dict[str, Optional[str]]:
     date_match = re.search(r'\((\d{2}\.\d{2}\.\d{4})\)', header_text)
-    date_iso = None
     if date_match:
-        dt = datetime.strptime(date_match.group(1), "%d.%m.%Y").date()
-        date_iso = dt.isoformat()
-    return {'Date': date_iso}
+        # parse into a real date object
+        dt: datetime.date = datetime.strptime(date_match.group(1), "%d.%m.%Y").date()
+        return {'Date': dt}
+    return {'Date': None}
 
 
-def detect_ple(show: Optional[str]) -> Optional[str]:
+def detect_ple(show: Optional[str]) -> bool:
     """
-    Mark 'Y' if 'Premium Live Event' appears in the show name.
+    True if the show name contains 'Premium Live Event', else False.
     """
-    if not show:
-        return None
-    return 'Y' if 'premium live event' in show.lower() else None
+    return bool(show and 'premium live event' in show.lower())
 
 
 def scrape_matches() -> pd.DataFrame:
-    """
-    Crawl cagematch listing pages and return a DataFrame of match data,
-    including Date, Show, Premium Live Event flag, and match details.
-    """
     records: List[Dict] = []
 
     for offset in range(0, 300, 100):
@@ -97,18 +88,15 @@ def scrape_matches() -> pd.DataFrame:
                 continue
             header_txt = header.get_text(" ", strip=True)
 
-            # skip house shows / LFG
+            # Skip House Shows / LFG
             if re.search(r'\b(house show|lfg)\b', header_txt, re.IGNORECASE):
                 continue
 
-            # extract date
             info = parse_header(header_txt)
-
-            # parse show name
             show_el = header.find('a')
             show = show_el.get_text(strip=True) if show_el else None
 
-            # skip non-PPV brand specials by name
+            # Skip “WWE Speed” or “WWE Main Event”
             if show and re.match(r'(?i)^wwe speed\b', show):
                 continue
             if show and re.match(r'(?i)^wwe main event\b', show):
@@ -122,29 +110,30 @@ def scrape_matches() -> pd.DataFrame:
                 continue
 
             for li in ul.find_all('li'):
-                # match type
                 mt_el = li.find('span', class_='MatchType')
                 mtype = mt_el.get_text(" ", strip=True).rstrip(':') if mt_el else None
+                # Skip dark matches
                 if mtype and re.search(r'\bdark\b', mtype, re.IGNORECASE):
                     continue
 
-                # results
                 mr_el = li.find('span', class_='MatchResults')
                 if not mr_el:
                     continue
                 full = mr_el.get_text(" ", strip=True)
 
-                time = extract_match_time(full)
-                finish = determine_finish(full)
-
-                title_change = detect_title_change(full)
+                time    = extract_match_time(full)
+                finish  = determine_finish(full)
+                tchange = detect_title_change(full)
 
                 parts = re.split(r' defeat[s]? ', full, maxsplit=1)
                 if len(parts) != 2:
                     continue
                 win_raw, loss_raw = parts
+                
+                # remove any “ by DQ”, “ by submission”, etc.
+                loss_raw = re.sub(r'\s+by\s+\w+.*$', '', loss_raw, flags=re.IGNORECASE)
 
-                # strip flags, times, managers, title-change
+                # Strip championship flags, match times, managers, title change markers
                 for patt in [r'\(c\)', r'\(\d{1,2}:\d{2}\)', r'\(w/.*?\)', r'- TITLE CHANGE !!!']:
                     win_raw  = re.sub(patt, '', win_raw)
                     loss_raw = re.sub(patt, '', loss_raw)
@@ -161,7 +150,7 @@ def scrape_matches() -> pd.DataFrame:
                     'Losers':             losers,
                     'Time':               time,
                     'Finish':             finish,
-                    'Title Change':       title_change,
+                    'Title Change':       tchange,
                 })
 
     return pd.DataFrame(records)
@@ -170,9 +159,6 @@ def scrape_matches() -> pd.DataFrame:
 def split_tag_teams_from_columns(df: pd.DataFrame,
                                  winners_col: str = 'Winners',
                                  losers_col: str = 'Losers') -> pd.DataFrame:
-    """
-    Expand any "(A, B)" into "A, B" for tag teams.
-    """
     def split_tag_teams(value: str) -> str:
         if pd.isna(value):
             return value
@@ -190,88 +176,113 @@ def split_tag_teams_from_columns(df: pd.DataFrame,
 
 
 def clean_column(value: str) -> str:
-    """
-    Remove bracketed notes like [2:0], [Runde 3], trailing dashes, and extra whitespace.
-    """
     if pd.isna(value):
         return value
-    value = re.sub(r'\[.*?\]', '', value)
-    value = re.sub(r'\s*-\s*$', '', value)
+    value = re.sub(r'\[.*?\]', '', value)      # remove [notes]
+    value = re.sub(r'\s*-\s*$', '', value)     # trailing dash
     return value.strip()
 
 
-def is_multi_man(row: pd.Series) -> Optional[str]:
+def is_multi_man(row: pd.Series) -> bool:
     """
-    Label 'Y' for matches with multi-competitor keywords or uneven sides.
+    True for multi-man matches (keyword in match type or uneven sides).
     """
-    mt = str(row['Match Type']).lower()
-    winners = str(row['Winners']).split(',')
-    losers  = str(row['Losers']).split(',')
-    if any(kw in mt for kw in ['fatal four way', 'triple threat', 'gauntlet', 'battle royal', 'ten man']):
-        return 'Y'
-    if len(winners) == 1 and len(losers) > 1:
-        return 'Y'
-    return None
+    mt      = str(row['Match Type'] or '').lower()
+    winners = [w.strip() for w in str(row['Winners']).split(',') if w.strip()]
+    losers  = [l.strip() for l in str(row['Losers']).split(',')  if l.strip()]
+    if any(kw in mt for kw in ['fatal four way','triple threat','gauntlet','battle royal','ten man']):
+        return True
+    return len(winners) == 1 and len(losers) > 1
 
 
-stipulation_keywords = [
-    'hardcore', 'casket', 'ambulance', 'anything goes', 'sudden death',
-    'tables', 'devil\'s playground', 'ladder', 'chair', 'chairs', 'bull rope',
-    'strap', 'kendo stick', 'singapore cane', 'steel cage', 'no holds barred',
-    'hell in a cell', 'street fight', 'falls count anywhere', 'last man standing',
-    'i quit', 'submission', 'buried alive', 'inferno', 'punjabi prison',
-    'blindfold', 'lumberjack', 'tribal combat', 'second city strap',
-    'elimination chamber', 'tower of doom', 'beat the clock', 'three stages of hell',
-    'survivors match', 'iron man', 'texas death', 'extreme rules',
-    'best two out of three falls', 'death', 'double dog collar', 'pure rules',
-    'new japan rambo', 'wargames', 'barbed wire board'
-]
-
-
-def detect_stipulation(mtype: str) -> Optional[str]:
+def detect_stipulation(mtype: str) -> bool:
     """
-    Label 'Y' if match type contains any stipulation keyword,
-    but exclude any that contain 'qualifying'.
+    True if match type contains any stipulation keyword (but not 'qualifying').
     """
-    mt = str(mtype).lower()
+    mt = str(mtype or '').lower()
     if 'qualifying' in mt:
-        return None
-    return 'Y' if any(kw in mt for kw in stipulation_keywords) else None
+        return False
+    return any(
+        kw in mt for kw in [
+            'hardcore','casket','ambulance','anything goes','sudden death',
+            'tables','devil\'s playground','ladder','chair','chairs','bull rope',
+            'strap','kendo stick','singapore cane','steel cage','no holds barred',
+            'hell in a cell','street fight','falls count anywhere','last man standing',
+            'i quit','submission','buried alive','inferno','punjabi prison',
+            'blindfold','lumberjack','tribal combat','second city strap',
+            'elimination chamber','tower of doom','beat the clock','three stages of hell',
+            'survivors match','iron man','texas death','extreme rules',
+            'best two out of three falls','death','double dog collar','pure rules',
+            'new japan rambo','wargames','barbed wire board'
+        ]
+    )
 
 
 def classify_match_type(mtype: str) -> Optional[str]:
-    """
-    Classify into #1 Contendership, Title, Battle Royal or None.
-    """
     mt = str(mtype).lower()
     if ('#1 contendership' in mt and 'final' in mt) or ('#1 contendership' in mt and 'tournament' not in mt):
         return '#1 Contendership'
-    if 'title' in mt and not any(kw in mt for kw in ['semi final', 'tournament first round']):
+    if 'title' in mt and not any(kw in mt for kw in ['semi final','tournament first round']):
         return 'Title'
     if 'battle royal' in mt:
         return 'Battle Royal'
     return None
 
+def refresh_matches(records: List[Dict]) -> None:
+    """
+    Truncate the matches table and bulk‐insert the new records.
+    """
+    session = SessionLocal()
+    try:
+        # 1) Delete everything
+        session.execute(delete(matches))
+        session.commit()
+
+        # 2) Bulk insert fresh data
+        session.execute(insert(matches), records)
+        session.commit()
+    finally:
+        session.close()
 
 if __name__ == "__main__":
+    # 1. Scrape into DataFrame
     df = scrape_matches()
+    
+    df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
 
-    # split tag teams into individuals
+
+    # 2. Clean & derive
     df = split_tag_teams_from_columns(df)
-
-    # clean up Winners/Losers text
-    df['Winners'] = df['Winners'].apply(clean_column)
-    df['Losers']  = df['Losers'].apply(clean_column)
-
-    # add derived columns
-    df['Multi-Man']   = df.apply(is_multi_man, axis=1)
-    df['Stipulation'] = df['Match Type'].apply(detect_stipulation)
-    df['Category']    = df['Match Type'].apply(classify_match_type)
-
-    # exclude tornado tag from Multi-Man
+    df['Winners']       = df['Winners'].apply(clean_column)
+    df['Losers']        = df['Losers'].apply(clean_column)
+    df['Multi-Man']     = df.apply(is_multi_man, axis=1)
+    df['Stipulation']   = df['Match Type'].apply(detect_stipulation)
+    df['Category']      = df['Match Type'].apply(classify_match_type)
     mask = df['Match Type'].str.contains('tornado tag', case=False, na=False)
-    df.loc[mask, 'Multi-Man'] = None
+    df.loc[mask, 'Multi-Man'] = False
 
-    # save to CSV
-    df.to_csv("matches.csv", index=False)
-    print(f"[INFO] Saved {len(df)} matches to matches.csv")
+
+    # 3. Rename to match your SQLAlchemy columns
+    df_db = df.rename(columns={
+        'Date':               'date',
+        'Show':               'show',
+        'Premium Live Event': 'ple',
+        'Match Type':         'match_type',
+        'Winners':            'winners',
+        'Losers':             'losers',
+        'Time':               'time',
+        'Finish':             'finish',
+        'Title Change':       'title_change',
+        'Multi-Man':          'multi_man',
+        'Stipulation':        'stipulation',
+        'Category':           'category',
+    })
+
+    records = df_db.to_dict(orient="records")
+    refresh_matches(records)
+    print(f"[INFO] Replaced matches table with {len(records)} fresh rows.")
+    
+
+
+
+   
