@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: wwe
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"    
+
+  scraper:
+    build:
+      context: .
+      dockerfile: src/Dockerfile.scraper
+    environment:
+      DATABASE_URL: postgresql://user:pass@db:5432/wwe
+    depends_on:
+      - db
+
+  elo:
+    build:
+      context: .
+      dockerfile: src/Dockerfile.elo
+    environment:
+      DATABASE_URL: postgresql://user:pass@db:5432/wwe
+    depends_on:
+      - db
+
+volumes:
+  db_data:
