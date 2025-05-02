@@ -19,3 +19,5 @@ wwe.db
 
 # Docker
 docker-compose.override.yml
+
+.vscode/settings.json
