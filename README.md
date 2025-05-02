@@ -57,5 +57,3 @@
 * Expose a REST API (FastAPI or Flask)
 * Set up CI/CD (tests, linting)
 
-```
-```
