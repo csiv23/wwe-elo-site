@@ -69,7 +69,7 @@ def detect_ple(show: Optional[str]) -> bool:
 def scrape_matches() -> pd.DataFrame:
     records: List[Dict] = []
 
-    for offset in range(0, 300, 100):
+    for offset in range(0, 1000, 100):
         url = f"{BASE_URL}&s={offset}" if offset else BASE_URL
         print(url)
         resp = requests.get(url)
