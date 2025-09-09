@@ -3,10 +3,10 @@
 import pandas as pd
 from typing import Dict, List, Any, Tuple, Optional
 
-from sqlalchemy import select, insert, delete
+from sqlalchemy import select, insert, delete, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from src.db import SessionLocal
-from src.models import matches, elo_history
+from src.db import SessionLocal, engine, metadata
+from src.models import matches_raw as matches, elo_history
 
 DEFAULT_ELO = 1000
 K_FACTOR   = 32
@@ -107,6 +107,16 @@ def refresh_elo_history(records: List[Dict[str, Any]]) -> None:
 
 
 if __name__ == "__main__":
+    
+    if engine.dialect.name.startswith("postg"):
+        with engine.begin() as conn:
+            conn.execute(text("CREATE SCHEMA IF NOT EXISTS bronze"))
+            conn.execute(text("CREATE SCHEMA IF NOT EXISTS silver"))
+            conn.execute(text("CREATE SCHEMA IF NOT EXISTS gold"))
+
+    # Ensure all tables defined in models are present (incl. gold.elo_history)
+    metadata.create_all(engine)
+    
     # 1) load all matches from the DB
     session = SessionLocal()
     rows = session.execute(select(matches)).mappings().all()

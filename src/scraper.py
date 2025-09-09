@@ -7,12 +7,20 @@ import re
 from datetime import datetime
 from typing import Optional, List, Dict
 
-from sqlalchemy import select, insert
+from sqlalchemy import select, insert, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from src.db import engine, SessionLocal, metadata
-from src.models import matches
+from src.models import matches_raw as matches
 
-# Ensure tables exist
+# Ensure schemas exist before creating tables
+if engine.dialect.name.startswith("postg"):
+    with engine.begin() as conn:
+        conn.execute(text("CREATE SCHEMA IF NOT EXISTS bronze"))
+        conn.execute(text("CREATE SCHEMA IF NOT EXISTS silver"))
+        conn.execute(text("CREATE SCHEMA IF NOT EXISTS gold"))
+
+
+# Now create tables in their schemas
 metadata.create_all(engine)
 
 BASE_URL = "https://www.cagematch.net/?id=8&nr=1&page=8"
